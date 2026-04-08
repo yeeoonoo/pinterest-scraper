@@ -1,0 +1,26 @@
+# 수집 결과물 (이미지, DB)
+output/
+pins.db
+
+# 로그
+scraper.log
+*.log
+
+# 쿠키 (민감 정보)
+cookies.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+
+# 환경변수
+.env
+
+# IDE
+.vscode/
+.idea/
+*.png
