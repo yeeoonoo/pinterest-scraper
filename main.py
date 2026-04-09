@@ -2,7 +2,9 @@
 Pinterest Scraper 진입점.
 Windows 작업 스케줄러가 매일 이 파일을 실행한다.
 
-    python main.py
+    python main.py                        # config.py의 KEYWORDS 사용
+    python main.py "aesthetic room"       # 키워드 직접 지정
+    python main.py "dark academia" "minimal interior"  # 여러 키워드
 """
 
 import logging
@@ -32,10 +34,13 @@ def run() -> None:
     today = date.today()
     logger.info("===== Pinterest Scraper 시작: %s =====", today)
 
+    # 커맨드라인 인자가 있으면 우선 사용, 없으면 config.KEYWORDS
+    keywords = sys.argv[1:] if len(sys.argv) > 1 else config.KEYWORDS
+
     storage.init_db()
     scraper = PinterestScraper()
 
-    for keyword in config.KEYWORDS:
+    for keyword in keywords:
         logger.info("키워드 처리 시작: [%s]", keyword)
         try:
             _process_keyword(scraper, keyword, today)
@@ -52,18 +57,8 @@ def _process_keyword(scraper: PinterestScraper, keyword: str, today: date) -> No
         logger.warning("[%s] 수집된 핀 없음", keyword)
         return
 
-    # 2. DB 중복 제거
-    new_pins = storage.filter_new_pins(pins)
-    logger.info(
-        "[%s] 중복 제거: %d개 → 신규 %d개",
-        keyword, len(pins), len(new_pins),
-    )
-    if not new_pins:
-        logger.info("[%s] 신규 핀 없음, 스킵", keyword)
-        return
-
-    # 3. 이미지 다운로드
-    downloaded = download_images(new_pins, keyword, today)
+    # 2. 이미지 다운로드
+    downloaded = download_images(pins, keyword, today)
     if not downloaded:
         logger.warning("[%s] 다운로드 성공한 이미지 없음", keyword)
         return

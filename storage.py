@@ -16,7 +16,8 @@ def init_db() -> None:
     with sqlite3.connect(config.DB_PATH) as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS pins (
-                pin_id      TEXT PRIMARY KEY,
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                pin_id      TEXT NOT NULL,
                 keyword     TEXT NOT NULL,
                 image_url   TEXT,
                 image_path  TEXT,
@@ -30,25 +31,11 @@ def init_db() -> None:
     logger.info("DB 초기화 완료: %s", config.DB_PATH)
 
 
-def is_duplicate(pin_id: str) -> bool:
-    """해당 pin_id가 이미 DB에 존재하는지 확인"""
-    with sqlite3.connect(config.DB_PATH) as conn:
-        row = conn.execute(
-            "SELECT 1 FROM pins WHERE pin_id = ?", (pin_id,)
-        ).fetchone()
-    return row is not None
-
-
-def filter_new_pins(pins: list[Pin]) -> list[Pin]:
-    """DB에 없는 핀만 반환"""
-    return [p for p in pins if not is_duplicate(p.pin_id)]
-
-
 def save_pin(pin: Pin) -> None:
     """핀 메타데이터를 DB에 저장"""
     with sqlite3.connect(config.DB_PATH) as conn:
         conn.execute("""
-            INSERT OR IGNORE INTO pins
+            INSERT INTO pins
                 (pin_id, keyword, image_url, image_path, saves, hearts, scraped_at, source_url)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, (
