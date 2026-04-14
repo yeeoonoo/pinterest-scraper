@@ -16,7 +16,7 @@ from playwright.sync_api import Response, sync_playwright
 
 import config
 from models import Pin
-from parser import deduplicate, extract_pins_from_response, sort_pins
+from parser import deduplicate, extract_pins_from_response, filter_by_keyword, sort_pins
 
 logger = logging.getLogger(__name__)
 
@@ -26,11 +26,13 @@ PINTEREST_SEARCH_URL = "https://www.pinterest.com/search/pins/?q={query}"
 class PinterestScraper:
     def __init__(self):
         self._collected_pins: list[Pin] = []
+        self._raw_items: dict[str, dict] = {}   # pin_id → 원본 API 응답 항목
         self._current_keyword: str = ""
 
     def scrape(self, keyword: str) -> list[Pin]:
         """키워드 검색 후 상위 N개 핀 반환."""
         self._collected_pins = []
+        self._raw_items = {}
         self._current_keyword = keyword
 
         with sync_playwright() as pw:
@@ -51,15 +53,17 @@ class PinterestScraper:
             context.close()
             browser.close()
 
-        # 중복 제거 → 정렬 → 상위 N개
+        # 중복 제거 → 키워드 필터 → 정렬 → 상위 N개
         pins = deduplicate(self._collected_pins)
+        pins = filter_by_keyword(pins, keyword, self._raw_items)
         pins = sort_pins(pins, config.SCRAPE["sort_by"])
         top_n = pins[: config.SCRAPE["top_n"]]
 
         logger.info(
-            "[%s] 수집 완료: 전체 %d개 → 중복제거 후 %d개 → 상위 %d개 선택",
+            "[%s] 수집 완료: 전체 %d개 → 중복제거 후 %d개 → 필터 후 %d개 → 상위 %d개 선택",
             keyword,
             len(self._collected_pins),
+            len(deduplicate(self._collected_pins)),
             len(pins),
             len(top_n),
         )
@@ -78,9 +82,10 @@ class PinterestScraper:
             return
         try:
             data = response.json()
-            pins = extract_pins_from_response(data, self._current_keyword)
+            pins, raw_items = extract_pins_from_response(data, self._current_keyword)
             if pins:
                 self._collected_pins.extend(pins)
+                self._raw_items.update(raw_items)
                 logger.debug("인터셉트: %d개 핀 추가 (누적 %d개)", len(pins), len(self._collected_pins))
         except Exception as e:
             logger.debug("응답 파싱 실패: %s", e)

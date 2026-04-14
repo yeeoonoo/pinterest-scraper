@@ -7,29 +7,35 @@ Playwright로 네트워크 응답을 가로채어 Pinterest 내부 API의
 """
 
 import logging
+import re
 from typing import Any
 
 from models import Pin
 
 logger = logging.getLogger(__name__)
 
+# 매칭 시 무시할 불용어 (너무 짧거나 의미 없는 단어)
+_STOPWORDS = {"a", "an", "the", "and", "or", "of", "in", "on", "at", "to", "for", "with"}
+
 # Pinterest 내부 검색 API 응답 경로
 _SEARCH_RESOURCE = "BaseSearchResource"
 _RELATED_RESOURCE = "RelatedModulesResource"
 
 
-def extract_pins_from_response(data: dict, keyword: str) -> list[Pin]:
+def extract_pins_from_response(data: dict, keyword: str) -> tuple[list[Pin], dict[str, dict]]:
     """
-    Pinterest API JSON 응답에서 Pin 목록 추출.
-    응답 구조가 달라도 results 배열을 재귀 탐색하여 처리.
+    Pinterest API JSON 응답에서 Pin 목록과 원본 항목 dict 추출.
+    반환: (pins, {pin_id: raw_item}) — raw_item은 키워드 필터링에 사용
     """
     results = _find_results(data)
     pins = []
+    raw_items = {}
     for item in results:
         pin = _parse_item(item, keyword)
         if pin:
             pins.append(pin)
-    return pins
+            raw_items[pin.pin_id] = item
+    return pins, raw_items
 
 
 def _find_results(data: dict) -> list[dict]:
@@ -128,6 +134,65 @@ def sort_pins(pins: list[Pin], sort_by: str = "auto") -> list[Pin]:
         key = lambda p: p.score
 
     return sorted(pins, key=key, reverse=True)
+
+
+def filter_by_keyword(pins: list[Pin], keyword: str, raw_items: dict[str, dict]) -> list[Pin]:
+    """
+    키워드 토큰 기준으로 관련 없는 핀 제거.
+
+    매칭 방식: 키워드 토큰이 메타데이터 단어에 포함되거나(부분 일치),
+    메타데이터 단어가 키워드 토큰에 포함되면 해당 토큰은 매칭된 것으로 간주.
+
+    예) 키워드 "french work jacket", 제목 "french workwear jacket"
+        - "french" ↔ "french" → ✓
+        - "work"   ↔ "workwear" → ✓ (work ⊂ workwear)
+        - "jacket" ↔ "jacket"  → ✓
+
+    키워드 토큰 중 하나라도 매칭되지 않으면 제외.
+    메타데이터가 아예 없는 핀은 통과시킴 (텍스트 없는 핀 보호).
+    """
+    tokens = _keyword_tokens(keyword)
+    if not tokens:
+        return pins
+
+    result = []
+    for pin in pins:
+        item = raw_items.get(pin.pin_id, {})
+        text = _extract_metadata_text(item)
+        if not text or _matches(tokens, text):
+            result.append(pin)
+        else:
+            logger.debug("필터 제외: pin_id=%s, 텍스트=%s", pin.pin_id, text[:80])
+
+    logger.info("키워드 필터: %d개 → %d개 (제외 %d개)", len(pins), len(result), len(pins) - len(result))
+    return result
+
+
+def _keyword_tokens(keyword: str) -> list[str]:
+    """키워드를 소문자 토큰 리스트로 변환, 불용어 및 2자 미만 제거"""
+    tokens = re.findall(r"[a-zA-Z가-힣0-9]+", keyword.lower())
+    return [t for t in tokens if t not in _STOPWORDS and len(t) >= 2]
+
+
+def _extract_metadata_text(item: dict) -> str:
+    """핀 메타데이터에서 검색 가능한 텍스트 추출"""
+    parts = [
+        item.get("title") or "",
+        item.get("description") or "",
+        item.get("grid_title") or "",
+        (item.get("board") or {}).get("name") or "",
+    ]
+    return " ".join(filter(None, parts)).lower()
+
+
+def _matches(tokens: list[str], text: str) -> bool:
+    """모든 키워드 토큰이 텍스트에서 부분 일치하는지 확인"""
+    text_words = re.findall(r"[a-zA-Z가-힣0-9]+", text)
+    for token in tokens:
+        matched = any(token in word or word in token for word in text_words)
+        if not matched:
+            return False
+    return True
 
 
 def deduplicate(pins: list[Pin]) -> list[Pin]:
