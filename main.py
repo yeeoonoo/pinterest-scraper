@@ -50,14 +50,37 @@ def run() -> None:
     logger.info("===== Pinterest Scraper 종료 =====")
 
 
+def _strip_filler_words(keyword: str) -> str:
+    """키워드에서 일반 패션어를 제거해 핵심 키워드만 남긴다."""
+    tokens = keyword.split()
+    stripped = [t for t in tokens if t.lower() not in config.FILLER_WORDS]
+    return " ".join(stripped) if stripped else keyword
+
+
 def _process_keyword(scraper: PinterestScraper, keyword: str, today: date) -> None:
+    top_n = config.SCRAPE["top_n"]
+
     # 1. 핀 수집 (네트워크 인터셉트 방식)
     pins = scraper.scrape(keyword)
+
+    # 2. top_n 미달이면 일반어 제거 후 재검색
+    if len(pins) < top_n:
+        stripped = _strip_filler_words(keyword)
+        if stripped != keyword:
+            logger.info(
+                "[%s] 수집 결과 %d개 (목표 %d개 미달) → 일반어 제거 후 재검색: [%s]",
+                keyword, len(pins), top_n, stripped,
+            )
+            fallback_pins = scraper.scrape(stripped)
+            if len(fallback_pins) > len(pins):
+                pins = fallback_pins
+                logger.info("[%s] 재검색 결과 %d개 사용", keyword, len(pins))
+
     if not pins:
         logger.warning("[%s] 수집된 핀 없음", keyword)
         return
 
-    # 2. 이미지 다운로드
+    # 3. 이미지 다운로드 (출력 폴더는 원래 keyword 기준 유지)
     downloaded = download_images(pins, keyword, today)
     if not downloaded:
         logger.warning("[%s] 다운로드 성공한 이미지 없음", keyword)

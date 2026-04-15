@@ -1,5 +1,5 @@
 @echo off
 chcp 65001 > nul
 cd /d "%~dp0"
-python run.py
+C:\Users\untem\anaconda3\python.exe run.py
 pause

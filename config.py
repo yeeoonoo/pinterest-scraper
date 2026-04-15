@@ -9,6 +9,17 @@ KEYWORDS = [
     # "dark academia",
 ]
 
+# 검색 결과가 top_n 미달일 때 키워드에서 제거할 일반어 목록
+FILLER_WORDS = {
+    "outfit", "outfits",
+    "style", "styles", "styled", "styling",
+    "look", "looks",
+    "aesthetic",
+    "inspo", "inspiration",
+    "ideas", "idea",
+    "fashion", "wear",
+}
+
 # -------------------------------------------------------
 # 스크래핑 설정
 # ※ 비로그인 방식으로 동작: saves는 제공되지 않으므로 hearts 기준 정렬
